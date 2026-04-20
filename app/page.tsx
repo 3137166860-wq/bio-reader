@@ -1,65 +1,97 @@
-import Image from "next/image";
+import { createClient } from '@/app/lib/supabase/server'
+import UploadForm from '@/app/components/UploadForm'
+import HistoryPanel from '@/app/components/HistoryPanel'
+import LoginForm from '@/app/components/auth/LoginForm'
 
-export default function Home() {
+export default async function Home() {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-white p-4 md:p-8">
+        <div className="max-w-6xl mx-auto">
+          <header className="py-8 text-center">
+            <h1 className="text-4xl font-bold text-gray-900">Bio‑Reader</h1>
+            <p className="text-gray-600 mt-2">AI 驱动的生物医学 PDF 分析平台</p>
+          </header>
+          <div className="mt-12">
+            <LoginForm />
+          </div>
+          <footer className="mt-16 text-center text-gray-500 text-sm">
+            <p>使用 Supabase 认证 + DeepSeek AI + PDF 文本提取</p>
+          </footer>
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-white p-4 md:p-8">
+      <div className="max-w-6xl mx-auto">
+        <header className="flex flex-col md:flex-row justify-between items-center py-8">
+          <div>
+            <h1 className="text-4xl font-bold text-gray-900">Bio‑Reader</h1>
+            <p className="text-gray-600 mt-2">
+              欢迎回来，{user.email?.split('@')[0]}！上传 PDF 即可获得 AI 分析。
+            </p>
+          </div>
+          <form
+            action="/auth/signout"
+            method="post"
+            className="mt-4 md:mt-0"
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+            <button
+              type="submit"
+              className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-gray-800"
+            >
+              退出登录
+            </button>
+          </form>
+        </header>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mt-8">
+          <div className="lg:col-span-2 space-y-8">
+            <section className="bg-white rounded-2xl shadow-lg p-6">
+              <h2 className="text-2xl font-bold mb-4">上传与分析</h2>
+              <UploadForm />
+            </section>
+
+            <section className="bg-white rounded-2xl shadow-lg p-6">
+              <h2 className="text-2xl font-bold mb-4">分析结果示例</h2>
+              <div className="text-gray-700 space-y-3">
+                <p>
+                  上传 PDF 后，AI 将自动提取：
+                </p>
+                <ul className="list-disc pl-5">
+                  <li>
+                    <strong>核心结论</strong> – 实验的主要发现
+                  </li>
+                  <li>
+                    <strong>材料列表</strong> – 使用的试剂、设备
+                  </li>
+                  <li>
+                    <strong>实验步骤</strong> – 详细的 protocol 流程
+                  </li>
+                </ul>
+                <p className="text-sm text-gray-500">
+                  所有分析结果会保存到您的个人历史记录中，随时可查。
+                </p>
+              </div>
+            </section>
+          </div>
+
+          <div className="lg:col-span-1">
+            <HistoryPanel />
+          </div>
         </div>
-      </main>
+
+        <footer className="mt-16 text-center text-gray-500 text-sm">
+          <p>Powered by Next.js 16, Supabase, DeepSeek AI, and pdfjs‑dist</p>
+        </footer>
+      </div>
     </div>
-  );
+  )
 }

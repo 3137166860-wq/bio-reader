@@ -1,0 +1,6 @@
+# Bio-Reader Cursor AI 核心指令
+1. 强制使用 Next.js App Router 模式。严禁使用旧版 Pages 路由。
+2. 样式规范：使用 Tailwind CSS。UI 风格必须是 Apple-style（极简、SF Pro 字体、大面积留白、细磨砂玻璃效果 backdrop-blur）。
+3. 数据库与鉴权：强制使用 @supabase/ssr，禁止使用过时的 @supabase/auth-helpers。
+4. 组件规范：默认使用 Server Components。只有涉及 useState、useEffect 或浏览器 API (如 pdf.js) 时，才在文件顶部添加 "use client"。
+5. 大模型交互：必须使用 Vercel AI SDK 的 streamText，并在服务端启用 `export const runtime = 'edge'` 以防止超时。
