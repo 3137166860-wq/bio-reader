@@ -38,26 +38,14 @@ export default function UploadForm() {
       // 极致懒加载：仅在需要解析 PDF 时才引入 pdfjs-dist
       const pdfjsLib = await import('pdfjs-dist')
       
-      // 优先尝试新版 .mjs Worker
-      pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.mjs`
+      // 锁定稳定 Worker (版本 3.11.174)
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'
       
-      // 提取 PDF 文本（浏览器端） - 防弹版本
+      // 提取 PDF 文本（浏览器端） - 标准读取
       const arrayBuffer = await file.arrayBuffer()
-      const typedarray = new Uint8Array(arrayBuffer) // 强类型字节数组，防止底层遍历崩溃
-      let pdf
-      try {
-        // 极其关键：必须 await .promise
-        const loadingTask = pdfjsLib.getDocument(typedarray)
-        pdf = await loadingTask.promise
-      } catch (workerError) {
-        // 如果 .mjs Worker 加载失败，回退到稳定的 v3 版本 CDN
-        console.warn('mjs Worker 加载失败，回退到 v3 版本', workerError)
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'
-        const loadingTask = pdfjsLib.getDocument(typedarray)
-        pdf = await loadingTask.promise
-      }
+      const pdf = await pdfjsLib.getDocument(arrayBuffer).promise
       
-      // 逐页提取文字 - 使用最原始的 for 循环，绝对避免 for...of 或 map 引起的编译报错
+      // 逐页提取文字
       pdfText = ''
       for (let i = 1; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i)
