@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@/app/lib/supabase/server'
 
 export const runtime = 'edge'
 
@@ -52,6 +53,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: 'Server configuration error' },
         { status: 500 }
+      )
+    }
+
+    // 验证用户身份，防止未授权调用
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
       )
     }
 
