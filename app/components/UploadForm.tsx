@@ -45,29 +45,39 @@ export default function UploadForm() {
       const arrayBuffer = await file.arrayBuffer()
       let pdf
       try {
-        pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
+        // 极其关键：必须 await .promise
+        const loadingTask = pdfjsLib.getDocument(arrayBuffer)
+        pdf = await loadingTask.promise
       } catch (workerError) {
         // 如果 .mjs Worker 加载失败，回退到稳定的 v3 版本 CDN
         console.warn('mjs Worker 加载失败，回退到 v3 版本', workerError)
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'
-        pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
+        const loadingTask = pdfjsLib.getDocument(arrayBuffer)
+        pdf = await loadingTask.promise
       }
       
+      // 逐页提取文字
+      pdfText = ''
       for (let i = 1; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i)
-        const content = await page.getTextContent()
-        const pageText = content.items
-          .map((item: unknown) => (item as { str: string }).str)
-          .join(' ')
-          .replace(/\s+/g, ' ')
-          .trim()
-        pdfText += pageText + '\n'
+        const textContent = await page.getTextContent()
+        
+        // 安全提取并拼接当前页的文本
+        if (textContent && textContent.items) {
+          const pageText = textContent.items
+            // @ts-ignore - 忽略潜在的类型定义缺失
+            .map(item => item.str || '')
+            .join(' ')
+          pdfText += pageText + '\n'
+        }
       }
       pdfText = pdfText.trim()
       // 限制文本长度，防止请求过大
       if (pdfText.length > 10000) {
         pdfText = pdfText.substring(0, 10000)
       }
+      // 打印提取结果以供调试
+      console.log('PDF 提取成功，总字数：', pdfText.length)
     } catch (err: unknown) {
       setError(`PDF 解析失败：${err instanceof Error ? err.message : '未知错误'}`)
       setProcessStep('idle')
