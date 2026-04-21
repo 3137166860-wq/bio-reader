@@ -1,18 +1,11 @@
 import { createClient } from '@/app/lib/supabase/server'
-import { redirect } from 'next/navigation'
 import HistoryPanel from './components/HistoryPanel'
 import LoginForm from './components/auth/LoginForm'
 import ClientUploadForm from './components/ClientUploadForm'
+import SignOutButton from './components/auth/SignOutButton'
 
 export default async function Home() {
   const supabase = await createClient()
-
-  async function handleSignOut() {
-    'use server'
-    const supabase = await createClient()
-    await supabase.auth.signOut()
-    redirect('/')
-  }
 
   const {
     data: { user },
@@ -47,17 +40,7 @@ export default async function Home() {
               欢迎回来，{user.email?.split('@')[0]}！上传 PDF 即可获得 AI 分析。
             </p>
           </div>
-          <form
-            action={handleSignOut}
-            className="mt-4 md:mt-0"
-          >
-            <button
-              type="submit"
-              className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-gray-800"
-            >
-              退出登录
-            </button>
-          </form>
+          <SignOutButton />
         </header>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mt-8">
