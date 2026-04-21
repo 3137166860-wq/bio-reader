@@ -26,23 +26,52 @@ export async function analyzePDF(text: string, pdfName: string) {
   // 可选：限制文本长度
   const truncatedText = text.length > 10000 ? text.substring(0, 10000) : text
 
-  // Call internal DeepSeek API route
-  const response = await fetch(`${process.env.NEXT_PUBLIC_APP_URL}/api/deepseek`, {
+  const apiKey = process.env.DEEPSEEK_API_KEY
+  if (!apiKey) {
+    throw new Error('DEEPSEEK_API_KEY 未配置')
+  }
+
+  const systemPrompt = `你是一个生物医学 AI 助手。请分析以下论文，并只返回严格的 JSON 对象，不能包含任何 markdown 代码块标记。JSON 必须严格包含三个键：core_conclusion (字符串), materials (字符串数组), protocol_steps (字符串数组)。`
+
+  const response = await fetch('https://api.deepseek.com/chat/completions', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text: truncatedText }),
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: 'deepseek-chat',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: truncatedText },
+      ],
+    }),
   })
 
   if (!response.ok) {
-    const error = await response.json()
+    const error = await response.json().catch(() => ({ error: '未知错误' }))
     throw new Error(`AI 分析失败: ${error.error || '未知错误'}`)
   }
 
+  const data = await response.json()
+  const rawContent = data.choices?.[0]?.message?.content
+  if (!rawContent) {
+    throw new Error('AI 返回了空的响应')
+  }
+
+  // 安全剔除可能的 ```json 标记
+  const cleanedContent = rawContent.replace(/```json/g, '').replace(/```/g, '').trim()
+
   let analysis: AnalysisResult
   try {
-    analysis = await response.json()
+    analysis = JSON.parse(cleanedContent)
   } catch {
     throw new Error('AI 返回了无效的 JSON 格式')
+  }
+
+  // 验证必需字段
+  if (!analysis.core_conclusion || !Array.isArray(analysis.materials) || !Array.isArray(analysis.protocol_steps)) {
+    throw new Error('AI 返回的 JSON 缺少必要字段')
   }
 
   // Save to Supabase

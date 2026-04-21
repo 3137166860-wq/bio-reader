@@ -4,6 +4,8 @@ import LoginForm from './components/auth/LoginForm'
 import ClientUploadForm from './components/ClientUploadForm'
 import SignOutButton from './components/auth/SignOutButton'
 
+export const maxDuration = 60
+
 export default async function Home() {
   const supabase = await createClient()
 
