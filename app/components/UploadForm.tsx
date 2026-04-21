@@ -3,9 +3,11 @@
 import { useState } from 'react'
 import type { AnalysisResult } from '@/app/actions/analyze'
 
+type ProcessStep = 'idle' | 'reading_pdf' | 'analyzing_ai'
+
 export default function UploadForm() {
   const [file, setFile] = useState<File | null>(null)
-  const [loading, setLoading] = useState(false)
+  const [processStep, setProcessStep] = useState<ProcessStep>('idle')
   const [result, setResult] = useState<AnalysisResult | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -27,20 +29,20 @@ export default function UploadForm() {
       return
     }
 
-    setLoading(true)
+    setProcessStep('reading_pdf')
     setError(null)
     setResult(null)
 
+    let pdfText = ''
     try {
       // 极致懒加载：仅在需要解析 PDF 时才引入 pdfjs-dist
       const pdfjsLib = await import('pdfjs-dist')
-      // 配置 worker（这一步很重要，否则浏览器会报缺少 worker 的错）
-      pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`
+      // 修复 Worker 链接：使用 unpkg CDN，确保版本号严格匹配
+      pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`
 
       // 提取 PDF 文本（浏览器端）
       const arrayBuffer = await file.arrayBuffer()
       const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
-      let pdfText = ''
       for (let i = 1; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i)
         const content = await page.getTextContent()
@@ -56,7 +58,14 @@ export default function UploadForm() {
       if (pdfText.length > 10000) {
         pdfText = pdfText.substring(0, 10000)
       }
+    } catch (err: unknown) {
+      setError(`PDF 解析失败：${err instanceof Error ? err.message : '未知错误'}`)
+      setProcessStep('idle')
+      return
+    }
 
+    try {
+      setProcessStep('analyzing_ai')
       // 动态引入 Server Action，避免任何可能的顶层依赖
       const { analyzePDF } = await import('@/app/actions/analyze')
       const analysis = await analyzePDF(pdfText, file.name)
@@ -64,9 +73,17 @@ export default function UploadForm() {
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : '分析失败')
     } finally {
-      setLoading(false)
+      setProcessStep('idle')
     }
   }
+
+  const stepMessages = {
+    idle: '',
+    reading_pdf: '步骤 1/2：正在努力阅读 PDF 内容...',
+    analyzing_ai: '步骤 2/2：AI 正在深度思考中，大概需要 30-60 秒，请耐心等待...',
+  }
+
+  const loading = processStep !== 'idle'
 
   return (
     <div>
@@ -92,12 +109,29 @@ export default function UploadForm() {
           <div className="bg-red-50 text-red-700 p-3 rounded-lg">{error}</div>
         )}
 
+        {/* 进度提示 */}
+        {processStep !== 'idle' && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <div className="flex items-center">
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-3"></div>
+              <p className="text-blue-800 font-medium">{stepMessages[processStep]}</p>
+            </div>
+            <div className="mt-2 w-full bg-gray-200 rounded-full h-2">
+              <div
+                className={`h-2 rounded-full ${
+                  processStep === 'reading_pdf' ? 'w-1/2 bg-blue-500' : 'w-full bg-green-500'
+                }`}
+              ></div>
+            </div>
+          </div>
+        )}
+
         <button
           type="submit"
           disabled={loading || !file}
           className="w-full py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {loading ? '分析中…' : '开始 AI 分析'}
+          {loading ? '处理中…' : '开始 AI 分析'}
         </button>
       </form>
 
