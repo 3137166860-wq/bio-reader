@@ -37,12 +37,29 @@ export default function UploadForm() {
       // 配置 worker（这一步很重要，否则浏览器会报缺少 worker 的错）
       pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`
 
+      // 提取 PDF 文本（浏览器端）
+      const arrayBuffer = await file.arrayBuffer()
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
+      let pdfText = ''
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i)
+        const content = await page.getTextContent()
+        const pageText = content.items
+          .map((item: unknown) => (item as { str: string }).str)
+          .join(' ')
+          .replace(/\s+/g, ' ')
+          .trim()
+        pdfText += pageText + '\n'
+      }
+      pdfText = pdfText.trim()
+      // 限制文本长度，防止请求过大
+      if (pdfText.length > 10000) {
+        pdfText = pdfText.substring(0, 10000)
+      }
+
       // 动态引入 Server Action，避免任何可能的顶层依赖
       const { analyzePDF } = await import('@/app/actions/analyze')
-
-      const formData = new FormData()
-      formData.append('pdf', file)
-      const analysis = await analyzePDF(formData)
+      const analysis = await analyzePDF(pdfText, file.name)
       setResult(analysis)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : '分析失败')

@@ -1,6 +1,5 @@
 'use server'
 
-import { extractTextFromPDF } from '@/app/lib/pdf/extract'
 import { createClient } from '@/app/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
@@ -10,7 +9,7 @@ export type AnalysisResult = {
   protocol_steps: string[]
 }
 
-export async function analyzePDF(formData: FormData) {
+export async function analyzePDF(text: string, pdfName: string) {
   const supabase = await createClient()
   const {
     data: { user },
@@ -20,19 +19,18 @@ export async function analyzePDF(formData: FormData) {
     throw new Error('未登录')
   }
 
-  const file = formData.get('pdf') as File
-  if (!file || file.type !== 'application/pdf') {
-    throw new Error('请上传 PDF 文件')
+  if (!text || typeof text !== 'string') {
+    throw new Error('无效的文本输入')
   }
 
-  // Extract text with truncation
-  const extractedText = await extractTextFromPDF(file, 10000)
+  // 可选：限制文本长度
+  const truncatedText = text.length > 10000 ? text.substring(0, 10000) : text
 
   // Call internal DeepSeek API route
   const response = await fetch(`${process.env.NEXT_PUBLIC_APP_URL}/api/deepseek`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text: extractedText }),
+    body: JSON.stringify({ text: truncatedText }),
   })
 
   if (!response.ok) {
@@ -50,8 +48,8 @@ export async function analyzePDF(formData: FormData) {
   // Save to Supabase
   const { error } = await supabase.from('analysis_history').insert({
     user_id: user.id,
-    pdf_name: file.name,
-    extracted_text: extractedText.substring(0, 1000), // store first 1000 chars for reference
+    pdf_name: pdfName,
+    extracted_text: truncatedText.substring(0, 1000), // store first 1000 chars for reference
     extracted_json: analysis,
   })
 
