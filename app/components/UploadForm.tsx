@@ -41,35 +41,39 @@ export default function UploadForm() {
       // 优先尝试新版 .mjs Worker
       pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.mjs`
       
-      // 提取 PDF 文本（浏览器端）
+      // 提取 PDF 文本（浏览器端） - 防弹版本
       const arrayBuffer = await file.arrayBuffer()
+      const typedarray = new Uint8Array(arrayBuffer) // 强类型字节数组，防止底层遍历崩溃
       let pdf
       try {
         // 极其关键：必须 await .promise
-        const loadingTask = pdfjsLib.getDocument(arrayBuffer)
+        const loadingTask = pdfjsLib.getDocument(typedarray)
         pdf = await loadingTask.promise
       } catch (workerError) {
         // 如果 .mjs Worker 加载失败，回退到稳定的 v3 版本 CDN
         console.warn('mjs Worker 加载失败，回退到 v3 版本', workerError)
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'
-        const loadingTask = pdfjsLib.getDocument(arrayBuffer)
+        const loadingTask = pdfjsLib.getDocument(typedarray)
         pdf = await loadingTask.promise
       }
       
-      // 逐页提取文字
+      // 逐页提取文字 - 使用最原始的 for 循环，绝对避免 for...of 或 map 引起的编译报错
       pdfText = ''
       for (let i = 1; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i)
         const textContent = await page.getTextContent()
         
-        // 安全提取并拼接当前页的文本
+        let pageText = ''
         if (textContent && textContent.items) {
-          const pageText = textContent.items
-            // @ts-ignore - 忽略潜在的类型定义缺失
-            .map(item => item.str || '')
-            .join(' ')
-          pdfText += pageText + '\n'
+          for (let j = 0; j < textContent.items.length; j++) {
+            // @ts-ignore
+            const itemStr = textContent.items[j].str
+            if (itemStr) {
+              pageText += itemStr + ' '
+            }
+          }
         }
+        pdfText += pageText + '\n'
       }
       pdfText = pdfText.trim()
       // 限制文本长度，防止请求过大
@@ -77,7 +81,7 @@ export default function UploadForm() {
         pdfText = pdfText.substring(0, 10000)
       }
       // 打印提取结果以供调试
-      console.log('PDF 提取成功，总字数：', pdfText.length)
+      console.log('PDF 提取完毕，总字数:', pdfText.length)
     } catch (err: unknown) {
       setError(`PDF 解析失败：${err instanceof Error ? err.message : '未知错误'}`)
       setProcessStep('idle')
