@@ -1,10 +1,19 @@
 import { createClient } from '@/app/lib/supabase/server'
-import UploadForm from '@/app/components/UploadForm'
-import HistoryPanel from '@/app/components/HistoryPanel'
-import LoginForm from '@/app/components/auth/LoginForm'
+import { redirect } from 'next/navigation'
+import HistoryPanel from './components/HistoryPanel'
+import LoginForm from './components/auth/LoginForm'
+import ClientUploadForm from './components/ClientUploadForm'
 
 export default async function Home() {
   const supabase = await createClient()
+
+  async function handleSignOut() {
+    'use server'
+    const supabase = await createClient()
+    await supabase.auth.signOut()
+    redirect('/')
+  }
+
   const {
     data: { user },
   } = await supabase.auth.getUser()
@@ -39,8 +48,7 @@ export default async function Home() {
             </p>
           </div>
           <form
-            action="/auth/signout"
-            method="post"
+            action={handleSignOut}
             className="mt-4 md:mt-0"
           >
             <button
@@ -56,7 +64,7 @@ export default async function Home() {
           <div className="lg:col-span-2 space-y-8">
             <section className="bg-white rounded-2xl shadow-lg p-6">
               <h2 className="text-2xl font-bold mb-4">上传与分析</h2>
-              <UploadForm />
+              <ClientUploadForm />
             </section>
 
             <section className="bg-white rounded-2xl shadow-lg p-6">
