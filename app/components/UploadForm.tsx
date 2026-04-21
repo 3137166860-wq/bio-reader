@@ -37,12 +37,22 @@ export default function UploadForm() {
     try {
       // 极致懒加载：仅在需要解析 PDF 时才引入 pdfjs-dist
       const pdfjsLib = await import('pdfjs-dist')
-      // 修复 Worker 链接：使用 unpkg CDN，确保版本号严格匹配
-      pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`
-
+      
+      // 优先尝试新版 .mjs Worker
+      pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.mjs`
+      
       // 提取 PDF 文本（浏览器端）
       const arrayBuffer = await file.arrayBuffer()
-      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
+      let pdf
+      try {
+        pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
+      } catch (workerError) {
+        // 如果 .mjs Worker 加载失败，回退到稳定的 v3 版本 CDN
+        console.warn('mjs Worker 加载失败，回退到 v3 版本', workerError)
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'
+        pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
+      }
+      
       for (let i = 1; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i)
         const content = await page.getTextContent()
