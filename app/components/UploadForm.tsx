@@ -1,7 +1,7 @@
 'use client'
 
-import { analyzePDF, AnalysisResult } from '@/app/actions/analyze'
 import { useState } from 'react'
+import type { AnalysisResult } from '@/app/actions/analyze'
 
 export default function UploadForm() {
   const [file, setFile] = useState<File | null>(null)
@@ -31,10 +31,17 @@ export default function UploadForm() {
     setError(null)
     setResult(null)
 
-    const formData = new FormData()
-    formData.append('pdf', file)
-
     try {
+      // 极致懒加载：仅在需要解析 PDF 时才引入 pdfjs-dist
+      const pdfjsLib = await import('pdfjs-dist')
+      // 配置 worker（这一步很重要，否则浏览器会报缺少 worker 的错）
+      pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`
+
+      // 动态引入 Server Action，避免任何可能的顶层依赖
+      const { analyzePDF } = await import('@/app/actions/analyze')
+
+      const formData = new FormData()
+      formData.append('pdf', file)
       const analysis = await analyzePDF(formData)
       setResult(analysis)
     } catch (err: unknown) {
