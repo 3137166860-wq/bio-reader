@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server'
-import { generateText, streamObject, Output } from 'ai'
+import { generateObject, streamObject } from 'ai'
 import { createOpenAI } from '@ai-sdk/openai'
 import { createClient } from '@/app/lib/supabase/server'
 import { after } from 'next/server'
@@ -35,7 +35,9 @@ const STAGE1_SYSTEM_PROMPT = `You are a biomedical paper classifier. Analyze the
 Respond with a JSON object containing:
 - "category": one of the above strings
 - "confidence": a number between 0 and 1
-- "rationale": a brief 1-sentence explanation`
+- "rationale": a brief 1-sentence explanation
+
+IMPORTANT: You must respond in valid JSON format.`
 
 const STAGE2_SYSTEM_PROMPT = `You are a biomedical NER (Named Entity Recognition) specialist. Extract structured bio-med entities from the paper text.
 
@@ -48,7 +50,9 @@ For each entity, extract:
 
 Extract ALL entities you can find. Be comprehensive. If a field is not explicitly mentioned, leave it as an empty string.
 
-Also extract the "paper_title" field if you can identify it from the text.`
+Also extract the "paper_title" field if you can identify it from the text.
+
+IMPORTANT: Respond ONLY with a valid JSON object.`
 
 // ── POST handler ───────────────────────────────────────
 
@@ -80,21 +84,17 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // ── Stage 1: Classify ──────────────────────────────
-    const classificationResult = await generateText({
+    // ── Stage 1: Classify (force json_object response for DeepSeek compatibility) ──
+    const classificationResult = await generateObject({
       model,
-      output: Output.object({ schema: ClassificationSchema }),
+      schema: ClassificationSchema,
+      providerOptions: { openai: { strictJsonSchema: false } },
       system: STAGE1_SYSTEM_PROMPT,
       prompt: `Classify the following paper:\n\n${text.substring(0, 4000)}`,
       temperature: 0.1,
-      maxOutputTokens: 500,
     })
 
-    const classification = classificationResult.output as unknown as {
-      category: PaperCategory
-      confidence: number
-      rationale: string
-    }
+    const classification = classificationResult.object
 
     // ── Create initial record (atomic insert) ──────────
     const { data: record, error: insertError } = await supabase
@@ -124,10 +124,11 @@ export async function POST(request: NextRequest) {
 
     const recordId = record.id
 
-    // ── Stage 2: Stream entities via streamObject ──────
+    // ── Stage 2: Stream entities via streamObject (force json_object response) ──
     const result = streamObject({
       model,
       schema: AnalysisResultSchema,
+      providerOptions: { openai: { strictJsonSchema: false } },
       system: `${STAGE2_SYSTEM_PROMPT}\n\nPaper category: ${classification.category}\nRationale: ${classification.rationale}`,
       prompt: `Extract all biomedical entities from this paper:\n\n${text}`,
       temperature: 0.1,
