@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server'
-import { generateObject, streamObject } from 'ai'
+import { generateText, streamObject } from 'ai'
 import { createOpenAI } from '@ai-sdk/openai'
 import { createClient } from '@/app/lib/supabase/server'
 import { after } from 'next/server'
@@ -16,12 +16,13 @@ export const maxDuration = 60
 const deepseek = (createOpenAI as any)({
   baseURL: 'https://api.deepseek.com/v1',
   apiKey: process.env.DEEPSEEK_API_KEY ?? '',
-  compatibility: 'compatible', // 核心补丁：强制使用基础 OpenAI 协议
+  compatibility: 'compatible', // 核心补丁：强制使用基础 OpenAI 协议，避免 json_schema 升级
 })
 
 const model = deepseek.chat('deepseek-chat')
 
 // ── System prompts ─────────────────────────────────────
+// 注意：两个 prompt 都包含 "JSON" 关键字，确保 DeepSeek 正确识别输出格式要求
 
 const STAGE1_SYSTEM_PROMPT = `You are a biomedical paper classifier. Analyze the paper text and classify it into ONE of the following categories:
 
@@ -38,7 +39,7 @@ Respond with a JSON object containing:
 - "confidence": a number between 0 and 1
 - "rationale": a brief 1-sentence explanation
 
-IMPORTANT: You must respond in valid JSON format.`
+IMPORTANT: You must respond with valid JSON only. No markdown, no code fences, no extra text.`
 
 const STAGE2_SYSTEM_PROMPT = `You are a biomedical NER (Named Entity Recognition) specialist. Extract structured bio-med entities from the paper text.
 
@@ -53,7 +54,7 @@ Extract ALL entities you can find. Be comprehensive. If a field is not explicitl
 
 Also extract the "paper_title" field if you can identify it from the text.
 
-IMPORTANT: Respond ONLY with a valid JSON object.`
+IMPORTANT: Respond ONLY with a valid JSON object. No markdown, no code fences, no extra text.`
 
 // ── POST handler ───────────────────────────────────────
 
@@ -85,31 +86,39 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // ── 优化 1：缩减 Stage 1 输入量 ──
-    // 分类只需要前 1200 字符（标题+摘要）就足够了
-    const stage1Text = text.substring(0, 1200);
+    // ── Stage 1: Classification via generateText ────────
+    // 使用 generateText + responseFormat.json_object 而非 generateObject，
+    // 因为 DeepSeek 不支持 json_schema（Structured Outputs 升级协议）。
+    const stage1Text = text.substring(0, 1500)
 
-    // ── 优化 2：分类与 Stage 2 启动并行化？不，Stage 2 依赖分类结果 ──
-    // 所以我们必须让 Stage 1 尽可能快
-    const classificationResult = await (generateObject as any)({
+    const classificationResponse = await generateText({
       model,
-      schema: ClassificationSchema,
-      mode: 'json',
-      system: STAGE1_SYSTEM_PROMPT + "\n\nRespond in JSON.",
+      system: STAGE1_SYSTEM_PROMPT,
       prompt: `Classify:\n\n${stage1Text}`,
       temperature: 0.1,
+      responseFormat: { type: 'json_object' },
     })
-    const classification = classificationResult.object;
 
-    // ── 优化 3：非阻塞式数据库记录创建 ──
-    // 先生成一个临时 ID，数据库写入延迟到流结束后处理
-    const tempRecordId = crypto.randomUUID();
+    // 手动解析 JSON 字符串回 ClassificationSchema
+    let classification: { category: PaperCategory; confidence: number; rationale: string }
+    try {
+      const parsed = JSON.parse(classificationResponse.text)
+      classification = ClassificationSchema.parse(parsed)
+    } catch (parseError) {
+      console.error('Classification JSON parse failed:', parseError, 'Raw:', classificationResponse.text)
+      throw new Error('Failed to parse classification result')
+    }
 
-    // ── 优化 4：启动 Stage 2 流 ──
+    // ── 立即生成 recordId，数据库写入延迟到流结束后 ──
+    const tempRecordId = crypto.randomUUID()
+
+    // ── Stage 2: Streaming NER extraction ───────────────
+    // 使用 streamObject 但强制 mode: 'json'（as any 绕过 TS 类型检查），
+    // 避免 SDK 自动升级到 json_schema 协议导致 DeepSeek 400 错误。
     const result = (streamObject as any)({
       model,
       schema: AnalysisResultSchema,
-      mode: 'json',
+      mode: 'json' as any,
       system: `${STAGE2_SYSTEM_PROMPT}\n\nCategory: ${classification.category}`,
       prompt: `Extract from:\n\n${text}`,
       temperature: 0.1,
