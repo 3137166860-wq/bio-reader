@@ -117,10 +117,13 @@ export async function POST(request: NextRequest) {
     // ── Stage 2: Streaming NER extraction ───────────────
     // 使用 streamObject 但强制 mode: 'json'（as any 绕过 TS 类型检查），
     // 避免 SDK 自动升级到 json_schema 协议导致 DeepSeek 400 错误。
+    // 同时通过 experimental_providerMetadata 强制 OpenAI 提供者使用 json_object 响应格式。
     const result = (streamObject as any)({
       model,
       schema: AnalysisResultSchema,
       mode: 'json' as any,
+      output: 'object' as any,
+      experimental_providerMetadata: { openai: { responseFormat: { type: 'json_object' } } } as any,
       system: `${STAGE2_SYSTEM_PROMPT}\n\nCategory: ${classification.category}`,
       prompt: `Extract from:\n\n${text}`,
       temperature: 0.1,
