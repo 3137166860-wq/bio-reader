@@ -82,14 +82,43 @@ export default function UploadForm() {
     setExtractProgress(0)
   }
 
-  // ── After extraction → show AnalysisView ──────────────
+  // ── After extraction → show upload summary and AnalysisView below ──
   if (pdfText) {
     return (
-      <AnalysisView
-        pdfText={pdfText}
-        pdfName={file?.name ?? 'Untitled'}
-        onClear={handleClear}
-      />
+      <div className="space-y-6">
+        {/* Upload summary card with smooth transition */}
+        <div className="bg-white dark:bg-neutral-900 rounded-2xl border border-neutral-200 dark:border-neutral-800 p-5 animate-in fade-in slide-in-from-bottom-2 duration-300 ease-out">
+          <div className="flex items-start gap-4">
+            <div className="p-2.5 bg-blue-50 dark:bg-blue-950/40 rounded-xl">
+              <FileText className="w-5 h-5 text-blue-500" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+                {file?.name ?? 'Untitled'}
+              </h3>
+              <p className="text-xs text-neutral-500 mt-1 line-clamp-2">
+                {pdfText.substring(0, 200)}...
+              </p>
+              <p className="text-[11px] text-neutral-400 mt-1.5">
+                {pdfText.length.toLocaleString()} chars extracted
+              </p>
+            </div>
+            <button
+              onClick={handleClear}
+              className="p-1.5 text-neutral-400 hover:text-neutral-600 rounded-lg hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        {/* AnalysisView with DataGrid */}
+        <AnalysisView
+          pdfText={pdfText}
+          pdfName={file?.name ?? 'Untitled'}
+          onClear={handleClear}
+        />
+      </div>
     )
   }
 

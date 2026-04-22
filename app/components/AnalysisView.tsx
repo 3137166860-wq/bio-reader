@@ -173,12 +173,14 @@ export default function AnalysisView({
         )}
       </div>
 
-      {/* Data Grid */}
-      <DataGrid
-        result={object as AnalysisResult | undefined}
-        isLoading={isLoading}
-        error={error}
-      />
+      {/* Data Grid with smooth transition */}
+      <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 ease-out">
+        <DataGrid
+          result={object as AnalysisResult | undefined}
+          isLoading={isLoading}
+          error={error}
+        />
+      </div>
     </div>
   )
 }
