@@ -75,8 +75,8 @@ export default function AnalysisView({
 
   // ── 双轨对冲状态机 ─────────────────────────────────────
   const { rows: tableData, isStreaming: tableStatus } = useStreamTableEngine({
-    streamingEntities: (object?.entities as BaseEntity[]) ?? [],
-    isStreamingComplete: !isLoading,
+    streamingEntities: (object as AnalysisResult | undefined)?.entities,
+    isStreamingComplete: !isLoading && !!object,
   })
 
   // ── Auto‑start analysis on mount ─────────────────────
