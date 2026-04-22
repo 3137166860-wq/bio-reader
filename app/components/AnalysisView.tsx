@@ -1,9 +1,10 @@
 'use client'
 
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useRef, useState, useEffect } from 'react'
 import { experimental_useObject as useObject } from '@ai-sdk/react'
 import DataGrid from './DataGrid'
-import { AnalysisResultSchema, type AnalysisResult } from '@/app/lib/schema/analysis'
+import { AnalysisResultSchema, type AnalysisResult, type BaseEntity } from '@/app/lib/schema/analysis'
+import { useStreamTableEngine } from '@/app/hooks/useStreamTableEngine'
 import { Loader2, Upload, FileText, X, CheckCircle2 } from 'lucide-react'
 
 interface AnalysisViewProps {
@@ -72,55 +73,24 @@ export default function AnalysisView({
     },
   })
 
-  // ── Start analysis on mount ──────────────────────────
-  const [started, setStarted] = useState(false)
-  const handleStart = useCallback(() => {
-    setStarted(true)
-    submit({
-      text: pdfText,
-      pdfName,
-      clientTimestamp: clientTimestampRef.current,
-    })
+  // ── 双轨对冲状态机 ─────────────────────────────────────
+  const { rows: tableData, isStreaming: tableStatus } = useStreamTableEngine({
+    streamingEntities: (object?.entities as BaseEntity[]) ?? [],
+    isStreamingComplete: !isLoading,
+  })
+
+  // ── Auto‑start analysis on mount ─────────────────────
+  const hasStarted = useRef(false)
+  useEffect(() => {
+    if (!hasStarted.current && pdfText) {
+      hasStarted.current = true
+      submit({
+        text: pdfText,
+        pdfName,
+        clientTimestamp: clientTimestampRef.current,
+      })
+    }
   }, [pdfText, pdfName, submit])
-
-  if (!started) {
-    return (
-      <div className="bg-white dark:bg-neutral-900 rounded-2xl border border-neutral-200 dark:border-neutral-800 p-6">
-        <div className="flex items-start gap-4">
-          <div className="p-2.5 bg-blue-50 dark:bg-blue-950/40 rounded-xl">
-            <FileText className="w-5 h-5 text-blue-500" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
-              {pdfName}
-            </h3>
-            <p className="text-xs text-neutral-500 mt-1 line-clamp-2">
-              {pdfText.substring(0, 200)}...
-            </p>
-            <p className="text-[11px] text-neutral-400 mt-1.5">
-              {pdfText.length.toLocaleString()} chars extracted
-            </p>
-          </div>
-          <button
-            onClick={onClear}
-            className="p-1.5 text-neutral-400 hover:text-neutral-600 rounded-lg hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        <div className="mt-5 flex gap-3">
-          <button
-            onClick={handleStart}
-            className="flex-1 py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-xl transition-colors flex items-center justify-center gap-2"
-          >
-            <Upload className="w-4 h-4" />
-            Start Analysis
-          </button>
-        </div>
-      </div>
-    )
-  }
 
   return (
     <div className="space-y-4">
@@ -176,8 +146,8 @@ export default function AnalysisView({
       {/* Data Grid with smooth transition */}
       <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 ease-out">
         <DataGrid
-          result={object as AnalysisResult | undefined}
-          isLoading={isLoading}
+          data={tableData}
+          status={tableStatus}
           error={error}
         />
       </div>

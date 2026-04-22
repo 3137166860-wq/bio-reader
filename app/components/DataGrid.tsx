@@ -26,10 +26,10 @@ const DIMENSION_CONFIGS = [
 
 // ── 组件属性 ──────────────────────────────────────────────
 interface DataGridProps {
-  /** 流式分析结果 */
-  result?: AnalysisResult
-  /** 是否正在加载（流式传输中） */
-  isLoading: boolean
+  /** 状态机处理后的表格行数据 */
+  data?: import('@/app/hooks/useStreamTableEngine').TableRow[]
+  /** 流式传输状态 */
+  status?: boolean
   /** 错误对象 */
   error?: Error
 }
@@ -75,13 +75,14 @@ function StatusIcon({ status }: { status: CellStatus }) {
 }
 
 // ── 主组件 ────────────────────────────────────────────────
-export default function DataGrid({ result, isLoading, error }: DataGridProps) {
-  // 使用流式表格引擎钩子
-  const { rows, columnCount, isStreaming, conflictCellIds } = useStreamTableEngine({
-    streamingEntities: result?.entities ?? [],
-    isStreamingComplete: !isLoading,
-    initialColumnCount: result?.entities?.length ?? 0,
-  })
+export default function DataGrid({ data, status, error }: DataGridProps) {
+  // 直接使用状态机处理后的数据
+  const rows = data ?? []
+  const columnCount = rows.length > 0 ? rows[0].cells.length : 0
+  const isStreaming = status ?? false
+  const conflictCellIds = rows.flatMap(row =>
+    row.cells.filter(cell => cell.status === CellStatus.STALE_CONFLICT).map(cell => cell.id)
+  )
 
   // 滚动容器引用（用于纵向虚拟化占位）
   const scrollContainerRef = useRef<HTMLDivElement>(null)
@@ -223,12 +224,12 @@ export default function DataGrid({ result, isLoading, error }: DataGridProps) {
   }, [columnCount, isStreaming])
 
   // ── 空状态 ──────────────────────────────────────────────
-  if (!isLoading && !error && columnCount === 0) {
+  if (!isStreaming && !error && columnCount === 0) {
     return null
   }
 
   // ── 加载骨架屏 ──────────────────────────────────────────
-  if (isLoading && columnCount === 0) {
+  if (isStreaming && columnCount === 0) {
     return (
       <div className="bg-white dark:bg-neutral-900 rounded-2xl border border-neutral-200 dark:border-neutral-800 overflow-hidden">
         <div className="p-6 flex items-center justify-center gap-3 text-neutral-500">
@@ -362,12 +363,7 @@ export default function DataGrid({ result, isLoading, error }: DataGridProps) {
         }}
       />
 
-      {/* 页脚：论文标题 */}
-      {result?.paper_title && (
-        <div className="px-5 py-2.5 border-t border-neutral-100 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-800/30">
-          <p className="text-[11px] text-neutral-400 truncate">{result.paper_title}</p>
-        </div>
-      )}
+      {/* 论文标题已在上层组件展示，此处省略 */}
     </div>
   )
 }
