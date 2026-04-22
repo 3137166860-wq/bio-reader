@@ -2,14 +2,19 @@
 
 import { createClient } from '@/app/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import type { AnalysisResult, PaperCategory } from '@/app/lib/schema/analysis'
 
-export type AnalysisResult = {
-  core_conclusion: string
-  materials: string[]
-  protocol_steps: string[]
-}
+// ── Persistence: save completed analysis to Supabase ──
+// Primary path: the Edge API route handles persistence via
+// streamObject.onFinish + after(). This Server Action is a
+// client-side fallback for retries / manual saves.
 
-export async function analyzePDF(text: string, pdfName: string) {
+export async function saveAnalysis(
+  text: string,
+  pdfName: string,
+  analysisResult: AnalysisResult,
+  category: PaperCategory
+) {
   const supabase = await createClient()
   const {
     data: { user },
@@ -19,67 +24,12 @@ export async function analyzePDF(text: string, pdfName: string) {
     throw new Error('未登录')
   }
 
-  if (!text || typeof text !== 'string') {
-    throw new Error('无效的文本输入')
-  }
-
-  // 可选：限制文本长度
-  const truncatedText = text.length > 10000 ? text.substring(0, 10000) : text
-
-  const apiKey = process.env.DEEPSEEK_API_KEY
-  if (!apiKey) {
-    throw new Error('DEEPSEEK_API_KEY 未配置')
-  }
-
-  const systemPrompt = `你是一个生物医学 AI 助手。请分析以下论文，并只返回严格的 JSON 对象，不能包含任何 markdown 代码块标记。JSON 必须严格包含三个键：core_conclusion (字符串), materials (字符串数组), protocol_steps (字符串数组)。`
-
-  const response = await fetch('https://api.deepseek.com/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: 'deepseek-chat',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: truncatedText },
-      ],
-    }),
-  })
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: '未知错误' }))
-    throw new Error(`AI 分析失败: ${error.error || '未知错误'}`)
-  }
-
-  const data = await response.json()
-  const rawContent = data.choices?.[0]?.message?.content
-  if (!rawContent) {
-    throw new Error('AI 返回了空的响应')
-  }
-
-  // 安全剔除可能的 ```json 标记
-  const cleanedContent = rawContent.replace(/```json/g, '').replace(/```/g, '').trim()
-
-  let analysis: AnalysisResult
-  try {
-    analysis = JSON.parse(cleanedContent)
-  } catch {
-    throw new Error('AI 返回了无效的 JSON 格式')
-  }
-
-  // 验证必需字段
-  if (!analysis.core_conclusion || !Array.isArray(analysis.materials) || !Array.isArray(analysis.protocol_steps)) {
-    throw new Error('AI 返回的 JSON 缺少必要字段')
-  }
-
-  // Save to Supabase
   const { error } = await supabase.from('analysis_history').insert({
     user_id: user.id,
     pdf_name: pdfName,
-    extracted_text: truncatedText.substring(0, 1000), // store first 1000 chars for reference
-    extracted_json: analysis,
+    extracted_text: text.substring(0, 1000),
+    extracted_json: analysisResult,
+    category,
   })
 
   if (error) {
@@ -87,9 +37,71 @@ export async function analyzePDF(text: string, pdfName: string) {
     throw new Error('保存记录失败')
   }
 
-  revalidatePath('/history')
-  return analysis
+  revalidatePath('/')
+  return { success: true }
 }
+
+// ── Atomic patch with LWW conflict resolution ─────────
+// Used by the Edge API route for race-condition-free updates.
+// Can also be called from client as a fallback.
+
+export async function patchAnalysisAtomic(
+  recordId: string,
+  extractedJson: AnalysisResult & { classification?: unknown },
+  clientTimestamp: number
+) {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    throw new Error('未登录')
+  }
+
+  // Verify ownership
+  const { data: record } = await supabase
+    .from('analysis_history')
+    .select('id, client_timestamp')
+    .eq('id', recordId)
+    .eq('user_id', user.id)
+    .single()
+
+  if (!record) {
+    throw new Error('记录不存在')
+  }
+
+  // LWW: skip if existing timestamp is newer
+  if (
+    record.client_timestamp !== null &&
+    record.client_timestamp > clientTimestamp
+  ) {
+    console.warn(
+      `LWW: stale update (existing=${record.client_timestamp}, incoming=${clientTimestamp}), skipping`
+    )
+    return { skipped: true }
+  }
+
+  const { error } = await supabase
+    .from('analysis_history')
+    .update({
+      extracted_json: extractedJson as Record<string, unknown>,
+      client_timestamp: clientTimestamp,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', recordId)
+    .eq('user_id', user.id)
+
+  if (error) {
+    console.error('Atomic patch error:', error)
+    throw new Error('更新记录失败')
+  }
+
+  revalidatePath('/')
+  return { success: true }
+}
+
+// ── History retrieval ──────────────────────────────────
 
 export async function getHistory() {
   const supabase = await createClient()
@@ -115,6 +127,8 @@ export async function getHistory() {
   return data
 }
 
+// ── History deletion ───────────────────────────────────
+
 export async function deleteHistory(id: string) {
   const supabase = await createClient()
   const {
@@ -136,5 +150,5 @@ export async function deleteHistory(id: string) {
     throw new Error('删除失败')
   }
 
-  revalidatePath('/history')
+  revalidatePath('/')
 }

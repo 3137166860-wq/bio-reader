@@ -3,6 +3,7 @@ import HistoryPanel from './components/HistoryPanel'
 import LoginForm from './components/auth/LoginForm'
 import ClientUploadForm from './components/ClientUploadForm'
 import SignOutButton from './components/auth/SignOutButton'
+import { Dna } from 'lucide-react'
 
 export const maxDuration = 60
 
@@ -15,17 +16,27 @@ export default async function Home() {
 
   if (!user) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-white p-4 md:p-8">
-        <div className="max-w-6xl mx-auto">
-          <header className="py-8 text-center">
-            <h1 className="text-4xl font-bold text-gray-900">Bio‑Reader</h1>
-            <p className="text-gray-600 mt-2">AI 驱动的生物医学 PDF 分析平台</p>
-          </header>
-          <div className="mt-12">
-            <LoginForm />
+      <div className="min-h-screen bg-gradient-to-b from-neutral-50 to-white dark:from-neutral-950 dark:to-neutral-900">
+        <div className="max-w-sm mx-auto px-4 pt-24 pb-16">
+          {/* Logo */}
+          <div className="flex flex-col items-center mb-12">
+            <div className="p-3 bg-blue-50 dark:bg-blue-950/40 rounded-2xl mb-4">
+              <Dna className="w-8 h-8 text-blue-500" />
+            </div>
+            <h1 className="text-3xl font-bold tracking-tight text-neutral-900 dark:text-neutral-100">
+              Bio‑Reader
+            </h1>
+            <p className="text-sm text-neutral-500 mt-2 text-center max-w-[260px]">
+              AI-powered biomedical entity extraction from PDF papers
+            </p>
           </div>
-          <footer className="mt-16 text-center text-gray-500 text-sm">
-            <p>使用 Supabase 认证 + DeepSeek AI + PDF 文本提取</p>
+
+          <LoginForm />
+
+          <footer className="mt-16 text-center">
+            <p className="text-[11px] text-neutral-400">
+              Supabase Auth + DeepSeek AI + Next.js Edge
+            </p>
           </footer>
         </div>
       </div>
@@ -33,56 +44,53 @@ export default async function Home() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-white p-4 md:p-8">
-      <div className="max-w-6xl mx-auto">
-        <header className="flex flex-col md:flex-row justify-between items-center py-8">
-          <div>
-            <h1 className="text-4xl font-bold text-gray-900">Bio‑Reader</h1>
-            <p className="text-gray-600 mt-2">
-              欢迎回来，{user.email?.split('@')[0]}！上传 PDF 即可获得 AI 分析。
-            </p>
+    <div className="min-h-screen bg-neutral-50 dark:bg-neutral-950">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        {/* ── Header ──────────────────────────────────── */}
+        <header className="flex items-center justify-between mb-8">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-blue-50 dark:bg-blue-950/40 rounded-xl">
+              <Dna className="w-5 h-5 text-blue-500" />
+            </div>
+            <div>
+              <h1 className="text-lg font-semibold tracking-tight text-neutral-900 dark:text-neutral-100">
+                Bio‑Reader
+              </h1>
+              <p className="text-[11px] text-neutral-500">
+                {user.email?.split('@')[0]}
+              </p>
+            </div>
           </div>
           <SignOutButton />
         </header>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mt-8">
-          <div className="lg:col-span-2 space-y-8">
-            <section className="bg-white rounded-2xl shadow-lg p-6">
-              <h2 className="text-2xl font-bold mb-4">上传与分析</h2>
+        {/* ── Main grid ───────────────────────────────── */}
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          {/* Left: Upload + Analysis */}
+          <div className="lg:col-span-3 space-y-6">
+            {/* Upload section */}
+            <section className="bg-white dark:bg-neutral-900 rounded-2xl border border-neutral-200 dark:border-neutral-800 p-5">
+              <h2 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100 mb-4 flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                Upload Paper
+              </h2>
               <ClientUploadForm />
-            </section>
-
-            <section className="bg-white rounded-2xl shadow-lg p-6">
-              <h2 className="text-2xl font-bold mb-4">分析结果示例</h2>
-              <div className="text-gray-700 space-y-3">
-                <p>
-                  上传 PDF 后，AI 将自动提取：
-                </p>
-                <ul className="list-disc pl-5">
-                  <li>
-                    <strong>核心结论</strong> – 实验的主要发现
-                  </li>
-                  <li>
-                    <strong>材料列表</strong> – 使用的试剂、设备
-                  </li>
-                  <li>
-                    <strong>实验步骤</strong> – 详细的 protocol 流程
-                  </li>
-                </ul>
-                <p className="text-sm text-gray-500">
-                  所有分析结果会保存到您的个人历史记录中，随时可查。
-                </p>
-              </div>
             </section>
           </div>
 
+          {/* Right: History */}
           <div className="lg:col-span-1">
-            <HistoryPanel />
+            <div className="lg:sticky lg:top-6">
+              <HistoryPanel />
+            </div>
           </div>
         </div>
 
-        <footer className="mt-16 text-center text-gray-500 text-sm">
-          <p>Powered by Next.js 16, Supabase, DeepSeek AI, and pdfjs‑dist</p>
+        {/* ── Footer ──────────────────────────────────── */}
+        <footer className="mt-12 pb-6 text-center">
+          <p className="text-[11px] text-neutral-400 flex items-center justify-center gap-1.5">
+            Powered by Next.js Edge · DeepSeek AI · Supabase
+          </p>
         </footer>
       </div>
     </div>
