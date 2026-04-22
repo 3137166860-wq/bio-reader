@@ -84,12 +84,12 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // ── Stage 1: Classify (force json_object response for DeepSeek compatibility) ──
-    const classificationResult = await generateObject({
+    // ── Stage 1: Classify (强制降级) ──
+    const classificationResult = await (generateObject as any)({
       model,
       schema: ClassificationSchema,
-      providerOptions: { openai: { strictJsonSchema: false } },
-      system: STAGE1_SYSTEM_PROMPT,
+      mode: 'json',
+      system: STAGE1_SYSTEM_PROMPT + "\n\nIMPORTANT: Respond with a valid JSON object.",
       prompt: `Classify the following paper:\n\n${text.substring(0, 4000)}`,
       temperature: 0.1,
     })
@@ -124,16 +124,16 @@ export async function POST(request: NextRequest) {
 
     const recordId = record.id
 
-    // ── Stage 2: Stream entities via streamObject (force json_object response) ──
-    const result = streamObject({
+    // ── Stage 2: Stream entities (强制降级) ──
+    const result = (streamObject as any)({
       model,
       schema: AnalysisResultSchema,
-      providerOptions: { openai: { strictJsonSchema: false } },
-      system: `${STAGE2_SYSTEM_PROMPT}\n\nPaper category: ${classification.category}\nRationale: ${classification.rationale}`,
+      mode: 'json',
+      system: `${STAGE2_SYSTEM_PROMPT}\n\nIMPORTANT: You must respond in valid JSON format.`,
       prompt: `Extract all biomedical entities from this paper:\n\n${text}`,
       temperature: 0.1,
       maxOutputTokens: 4096,
-      onFinish: async ({ object: analysisResult, error: finishError }) => {
+      onFinish: async ({ object: analysisResult, error: finishError }: { object?: any; error?: any }) => {
         if (finishError) {
           console.error('StreamObject finish error:', finishError)
           return
