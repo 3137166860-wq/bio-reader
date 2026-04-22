@@ -91,7 +91,9 @@ export async function POST(request: NextRequest) {
     // 因为 DeepSeek 不支持 json_schema（Structured Outputs 升级协议）。
     const stage1Text = text.substring(0, 1500)
 
-    const classificationResponse = await generateText({
+    // 使用 (generateText as any) 绕过 TS 类型，因为 AI SDK v6 的 generateText 类型中不包含 responseFormat。
+    // 但底层 @ai-sdk/openai provider 支持 responseFormat，会将其转为 HTTP 请求中的 response_format。
+    const classificationResponse = await (generateText as any)({
       model,
       system: STAGE1_SYSTEM_PROMPT,
       prompt: `Classify:\n\n${stage1Text}`,
