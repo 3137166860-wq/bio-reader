@@ -1,9 +1,9 @@
 'use client'
 
-import { useCallback, useRef, useState, useEffect } from 'react'
-import { experimental_useObject as useObject } from '@ai-sdk/react'
+import { useRef, useState, useEffect } from 'react'
+import { useCompletion } from '@ai-sdk/react'
 import DataGrid from './DataGrid'
-import { AnalysisResultSchema, type AnalysisResult, type BaseEntity } from '@/app/lib/schema/analysis'
+import { type AnalysisResult, type BaseEntity } from '@/app/lib/schema/analysis'
 import { useStreamTableEngine } from '@/app/hooks/useStreamTableEngine'
 import { Loader2, Upload, FileText, X, CheckCircle2 } from 'lucide-react'
 
@@ -26,42 +26,36 @@ export default function AnalysisView({
   const clientTimestampRef = useRef(Date.now())
 
   const {
-    object,
+    completion,
     isLoading,
     error,
-    submit,
+    complete: submit,
     stop,
-  } = useObject({
+  } = useCompletion({
     api: '/api/analyze',
-    schema: AnalysisResultSchema,
-    onError: (err) => {
-      console.error('Stream error:', err)
+    // 自定义请求体以匹配后端期望的字段
+    body: {
+      text: pdfText,
+      pdfName,
+      clientTimestamp: clientTimestampRef.current,
     },
-    // Client-side fallback persistence (server also persists via after())
-    onFinish: async ({ object: result, error: finishError }) => {
-      if (finishError) {
-        console.error('Schema validation error:', finishError)
-        return
-      }
-      if (!result) return
-
-      // Server-side persistence (via streamObject.onFinish + after())
-      // handles the primary save. This client-side fallback is optional
-      // and only fires if the server-side persistence didn't complete.
-      // We keep it here as a belt-and-suspenders measure.
+    onError: (err) => console.error('Stream error:', err),
+    onFinish: async (prompt, resultText) => {
+      // 原有保存逻辑
+      if (!resultText) return
       setSaving(true)
       setSaveError(null)
       try {
-        // Attempt to verify the server-side save by checking if the record exists.
-        // If the server-side persistence already succeeded, this is a no-op.
-        // The server-side persistence uses the same client_timestamp for LWW,
-        // so duplicate saves are idempotent.
+        // 尝试解析结果文本
+        const result = JSON.parse(resultText)
+        // 客户端保存回退逻辑（服务器端持久化已通过 after() 完成）
+        // 此回退是可选的，仅当服务器端持久化未完成时触发
         const { patchAnalysisAtomic } = await import(
           '@/app/actions/analyze'
         )
-        // The record ID is in the response headers, but useObject doesn't expose headers.
-        // Server-side persistence via after() is the primary path.
-        // This fallback is best-effort.
+        // 记录 ID 在响应头中，但 useCompletion 不暴露头信息。
+        // 服务器端持久化 via after() 是主要路径。
+        // 此回退是尽力而为的。
         setSaved(true)
       } catch (err) {
         setSaveError(
@@ -73,10 +67,21 @@ export default function AnalysisView({
     },
   })
 
+  // ── 安全增量 JSON 解析 ────────────────────────────────
+  let currentEntities: BaseEntity[] = []
+  try {
+    if (completion) {
+      const parsed = JSON.parse(completion)
+      currentEntities = parsed.entities || []
+    }
+  } catch (e) {
+    // 忽略中间态解析错误
+  }
+
   // ── 双轨对冲状态机 ─────────────────────────────────────
   const { rows: tableData, isStreaming: tableStatus } = useStreamTableEngine({
-    streamingEntities: (object as AnalysisResult | undefined)?.entities,
-    isStreamingComplete: !isLoading && !!object,
+    streamingEntities: currentEntities,
+    isStreamingComplete: !isLoading && currentEntities.length > 0,
   })
 
   // ── Auto‑start analysis on mount ─────────────────────
@@ -84,11 +89,7 @@ export default function AnalysisView({
   useEffect(() => {
     if (!hasStarted.current && pdfText) {
       hasStarted.current = true
-      submit({
-        text: pdfText,
-        pdfName,
-        clientTimestamp: clientTimestampRef.current,
-      })
+      submit('') // 使用预定义的 body，传递空字符串作为 prompt
     }
   }, [pdfText, pdfName, submit])
 

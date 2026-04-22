@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server'
-import { generateText, streamObject } from 'ai'
+import { generateText, streamText } from 'ai'
 import { createOpenAI } from '@ai-sdk/openai'
 import { createClient } from '@/app/lib/supabase/server'
 import { after } from 'next/server'
@@ -115,47 +115,49 @@ export async function POST(request: NextRequest) {
     const tempRecordId = crypto.randomUUID()
 
     // ── Stage 2: Streaming NER extraction ───────────────
-    // 使用 streamObject 但强制 mode: 'json'（as any 绕过 TS 类型检查），
-    // 避免 SDK 自动升级到 json_schema 协议导致 DeepSeek 400 错误。
-    // 同时通过 experimental_providerMetadata 强制 OpenAI 提供者使用 json_object 响应格式。
-    const result = (streamObject as any)({
+    // 彻底废弃 streamObject，改用 streamText 强制降级为 json_object 协议，避免 DeepSeek 400 崩溃。
+    const result = (streamText as any)({
       model,
-      schema: AnalysisResultSchema,
-      mode: 'json' as any,
-      output: 'object' as any,
-      experimental_providerMetadata: { openai: { responseFormat: { type: 'json_object' } } } as any,
       system: `${STAGE2_SYSTEM_PROMPT}\n\nCategory: ${classification.category}`,
       prompt: `Extract from:\n\n${text}`,
       temperature: 0.1,
-      onFinish: async ({ object: analysisResult }: { object?: any }) => {
-        if (!analysisResult) return
+      // 使用实验性标志强制 DeepSeek 返回旧版 json_object，避免 400 崩溃
+      experimental_providerMetadata: {
+        openai: { responseFormat: { type: 'json_object' } }
+      } as any,
+      onFinish: async ({ text: rawText }: { text: string }) => {
+        // 原来的持久化逻辑保持不变，但需尝试 JSON.parse(rawText) 获取分析结果
+        try {
+          const analysisResult = JSON.parse(rawText)
+          after(async () => {
+            const s = await createClient()
+            const { error: updateError } = await s.rpc(
+              'update_analysis_atomic',
+              {
+                p_id: tempRecordId,
+                p_extracted_json: {
+                  ...analysisResult,
+                  classification,
+                },
+                p_client_timestamp: clientTimestamp,
+                p_meta: {
+                  pdf_name: pdfName,
+                  user_id: user.id,
+                },
+              }
+            )
 
-        after(async () => {
-          const s = await createClient()
-          const { error: updateError } = await s.rpc(
-            'update_analysis_atomic',
-            {
-              p_id: tempRecordId,
-              p_extracted_json: {
-                ...analysisResult,
-                classification,
-              },
-              p_client_timestamp: clientTimestamp,
-              p_meta: {
-                pdf_name: pdfName,
-                user_id: user.id,
-              },
+            if (updateError) {
+              console.error('Atomic update failed:', updateError)
             }
-          )
-
-          if (updateError) {
-            console.error('Atomic update failed:', updateError)
-          }
-        })
+          })
+        } catch(e) {
+          console.error("Final JSON parse failed", e)
+        }
       },
     })
 
-    // 核心：立即返回流，抢在 25 秒前握手
+    // 返回流式响应，客户端将接收到纯文本块
     return result.toTextStreamResponse({
       headers: {
         'X-Analysis-Id': tempRecordId,
