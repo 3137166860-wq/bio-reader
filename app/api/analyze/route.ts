@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server'
-import { generateObject, streamObject } from 'ai'
+import { generateText, streamObject } from 'ai'
 import { createOpenAI } from '@ai-sdk/openai'
 import { createClient } from '@/app/lib/supabase/server'
 import { after } from 'next/server'
@@ -13,9 +13,10 @@ export const runtime = 'edge'
 export const maxDuration = 60
 
 // ── DeepSeek provider (OpenAI-compatible) ──────────────
-const deepseek = createOpenAI({
+const deepseek = (createOpenAI as any)({
   baseURL: 'https://api.deepseek.com/v1',
   apiKey: process.env.DEEPSEEK_API_KEY ?? '',
+  compatibility: 'compatible', // 核心补丁：强制使用基础 OpenAI 协议
 })
 
 const model = deepseek.chat('deepseek-chat')
@@ -84,17 +85,25 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // ── Stage 1: Classify (强制降级) ──
-    const classificationResult = await (generateObject as any)({
+    // ── Stage 1: Classify (改用 generateText 手动解析，确保 100% 成功) ──
+    // 理由：generateText 的 responseFormat 选项更底层，不容易被 SDK 篡改
+    const classificationResponse = await (generateText as any)({
       model,
-      schema: ClassificationSchema,
-      mode: 'json',
-      system: STAGE1_SYSTEM_PROMPT + "\n\nIMPORTANT: Respond with a valid JSON object.",
+      system: STAGE1_SYSTEM_PROMPT + "\n\nAlways respond in JSON format.",
       prompt: `Classify the following paper:\n\n${text.substring(0, 4000)}`,
       temperature: 0.1,
+      // 显式指定 OpenAI 兼容的 json_object 模式
+      responseFormat: { type: 'json_object' },
     })
 
-    const classification = classificationResult.object
+    // 手动解析并校验（因为我们绕过了 generateObject）
+    let classification: any
+    try {
+      classification = ClassificationSchema.parse(JSON.parse(classificationResponse.text))
+    } catch (e) {
+      console.error("Classification parse error:", e)
+      throw new Error("Failed to parse AI classification")
+    }
 
     // ── Create initial record (atomic insert) ──────────
     const { data: record, error: insertError } = await supabase
@@ -124,20 +133,17 @@ export async function POST(request: NextRequest) {
 
     const recordId = record.id
 
-    // ── Stage 2: Stream entities (强制降级) ──
-    const result = (streamObject as any)({
+    // ── Stage 2: Stream entities (改用 streamObject + 协议降级) ──
+    const result = await (streamObject as any)({
       model,
       schema: AnalysisResultSchema,
+      // 强制声明 mode: 'json' 告知 SDK 不要尝试生成 json_schema
       mode: 'json',
-      system: `${STAGE2_SYSTEM_PROMPT}\n\nIMPORTANT: You must respond in valid JSON format.`,
+      system: `${STAGE2_SYSTEM_PROMPT}\n\nPaper category: ${classification.category}\n\nIMPORTANT: Respond ONLY with a valid JSON object.`,
       prompt: `Extract all biomedical entities from this paper:\n\n${text}`,
       temperature: 0.1,
       maxOutputTokens: 4096,
-      onFinish: async ({ object: analysisResult, error: finishError }: { object?: any; error?: any }) => {
-        if (finishError) {
-          console.error('StreamObject finish error:', finishError)
-          return
-        }
+      onFinish: async ({ object: analysisResult }: { object?: any }) => {
         if (!analysisResult) return
 
         // ── Atomic persistence via after() ──────────
