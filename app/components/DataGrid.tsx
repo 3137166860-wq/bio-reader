@@ -27,9 +27,9 @@ const DIMENSION_CONFIGS = [
 // ── 组件属性 ──────────────────────────────────────────────
 interface DataGridProps {
   /** 状态机处理后的表格行数据 */
-  data?: import('@/app/hooks/useStreamTableEngine').TableRow[]
+  data: import('@/app/hooks/useStreamTableEngine').TableRow[]
   /** 流式传输状态 */
-  status?: boolean
+  isStreaming: boolean
   /** 错误对象 */
   error?: Error
 }
@@ -75,11 +75,10 @@ function StatusIcon({ status }: { status: CellStatus }) {
 }
 
 // ── 主组件 ────────────────────────────────────────────────
-export default function DataGrid({ data, status, error }: DataGridProps) {
+export default function DataGrid({ data, isStreaming, error }: DataGridProps) {
   // 直接使用状态机处理后的数据
-  const rows = data ?? []
+  const rows = data
   const columnCount = rows.length > 0 ? rows[0].cells.length : 0
-  const isStreaming = status ?? false
   const conflictCellIds = rows.flatMap(row =>
     row.cells.filter(cell => cell.status === CellStatus.STALE_CONFLICT).map(cell => cell.id)
   )

@@ -147,7 +147,7 @@ export default function AnalysisView({
       <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 ease-out">
         <DataGrid
           data={tableData}
-          status={tableStatus}
+          isStreaming={tableStatus}
           error={error}
         />
       </div>
